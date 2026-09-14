@@ -1,0 +1,18 @@
+[
+    {
+        "codigo": "001",
+        "nome": "jjj",
+        "largura_cm": 2.44,
+        "comprimento_cm": 4.6,
+        "altura_cm": 4.6,
+        "abertura_canaletas_cm": 2.94
+    },
+    {
+        "codigo": "002",
+        "nome": "pp",
+        "largura_cm": 3.4,
+        "comprimento_cm": 6.8,
+        "altura_cm": 2.5,
+        "abertura_canaletas_cm": 3.9
+    }
+]

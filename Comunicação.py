@@ -1,89 +1,165 @@
 import serial
+import serial.tools.list_ports
 import time
 
 
-# ============================================================
-# CONFIGURAÇÃO DO ARDUINO
-# ============================================================
+class ComunicacaoESP32:
 
-PORTA_ARDUINO = "COM5"
-BAUDRATE = 115200
+    def __init__(
+        self,
+        porta=None,
+        velocidade=115200
+    ):
 
-arduino = None
+        self.porta = porta
+        self.velocidade = velocidade
 
+        self.esp32 = None
 
-# ============================================================
-# CONECTAR
-# ============================================================
+    # ---------------------------------------------------------
+    # ENCONTRAR ESP32
+    # ---------------------------------------------------------
 
-def conectar_arduino():
+    def encontrar_porta(self):
 
-    global arduino
+        portas = serial.tools.list_ports.comports()
 
-    try:
+        for porta in portas:
 
-        arduino = serial.Serial(
-            PORTA_ARDUINO,
-            BAUDRATE,
-            timeout=1
+            descricao = (
+                str(porta.description)
+                .lower()
+            )
+
+            if (
+                "esp32" in descricao
+                or "cp210" in descricao
+                or "ch340" in descricao
+                or "usb" in descricao
+            ):
+
+                return porta.device
+
+        return None
+
+    # ---------------------------------------------------------
+    # CONECTAR
+    # ---------------------------------------------------------
+
+    def conectar(self):
+
+        porta = self.porta
+
+        if porta is None:
+
+            porta = self.encontrar_porta()
+
+        if porta is None:
+
+            print(
+                "ESP32 não encontrado."
+            )
+
+            return False
+
+        try:
+
+            self.esp32 = serial.Serial(
+                porta,
+                self.velocidade,
+                timeout=1
+            )
+
+            time.sleep(2)
+
+            print(
+                f"ESP32 conectado em {porta}"
+            )
+
+            return True
+
+        except Exception as erro:
+
+            print(
+                "Erro ao conectar:",
+                erro
+            )
+
+            return False
+
+    # ---------------------------------------------------------
+    # ENVIAR ABERTURA
+    # ---------------------------------------------------------
+
+    def enviar_abertura(
+        self,
+        abertura_cm
+    ):
+
+        if self.esp32 is None:
+
+            if not self.conectar():
+
+                return False
+
+        comando = (
+            f"ABRIR:{abertura_cm:.2f}\n"
         )
 
-        time.sleep(2)
+        try:
 
-        print(f"Arduino conectado em {PORTA_ARDUINO}")
+            self.esp32.write(
+                comando.encode()
+            )
 
-        return True
+            print(
+                "Comando enviado:",
+                comando.strip()
+            )
 
-    except serial.SerialException as erro:
+            return True
 
-        print(f"Erro ao conectar ao Arduino: {erro}")
+        except Exception as erro:
 
-        return False
+            print(
+                "Erro ao enviar:",
+                erro
+            )
 
+            return False
 
-# ============================================================
-# ENVIAR MEDIDAS
-# ============================================================
+    # ---------------------------------------------------------
+    # PARAR ESTEIRA
+    # ---------------------------------------------------------
 
-def enviar_medidas(largura_cm, altura_cm):
+    def parar_esteira(self):
 
-    if arduino is None or not arduino.is_open:
-        print("Arduino não conectado.")
-        return
+        if self.esp32:
 
-    comando = (
-        f"LARGURA:{largura_cm:.1f};"
-        f"ALTURA:{altura_cm:.1f}\n"
-    )
+            self.esp32.write(
+                b"ESTEIRA:PARAR\n"
+            )
 
-    try:
+    # ---------------------------------------------------------
+    # LIGAR ESTEIRA
+    # ---------------------------------------------------------
 
-        arduino.write(
-            comando.encode("utf-8")
-        )
+    def ligar_esteira(self):
 
-        print(
-            "Enviado para Arduino:",
-            comando.strip()
-        )
+        if self.esp32:
 
-    except serial.SerialException as erro:
+            self.esp32.write(
+                b"ESTEIRA:LIGAR\n"
+            )
 
-        print(
-            f"Erro ao enviar dados: {erro}"
-        )
+    # ---------------------------------------------------------
+    # FECHAR
+    # ---------------------------------------------------------
 
+    def fechar(self):
 
-# ============================================================
-# FECHAR COMUNICAÇÃO
-# ============================================================
+        if self.esp32:
 
-def desconectar_arduino():
+            self.esp32.close()
 
-    global arduino
-
-    if arduino is not None and arduino.is_open:
-
-        arduino.close()
-
-        print("Arduino desconectado.")
+            self.esp32 = None

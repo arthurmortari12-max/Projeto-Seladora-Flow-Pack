@@ -1,409 +1,208 @@
 import cv2
-import numpy as np
-
-from Comunicação import (
-    conectar_arduino,
-    enviar_medidas,
-    desconectar_arduino
-)
 
 
-# ============================================================
-# CONFIGURAÇÃO DA WEBCAM
-# ============================================================
+class CameraFlowPack:
 
-INDICE_CAM = 1
-
-webcam = cv2.VideoCapture(INDICE_CAM)
-
-if not webcam.isOpened():
-
-    print(
-        f"Erro: Não foi possível acessar "
-        f"a webcam no índice {INDICE_CAM}."
-    )
-
-    print(
-        "Dica: tente mudar o índice de 1 para 0."
-    )
-
-    exit()
-
-
-webcam.set(
-    cv2.CAP_PROP_FRAME_WIDTH,
-    1280
-)
-
-webcam.set(
-    cv2.CAP_PROP_FRAME_HEIGHT,
-    720
-)
-
-
-print("Webcam aberta!")
-print("Pressione 'q' para fechar.")
-
-
-# ============================================================
-# CONEXÃO COM ARDUINO
-# ============================================================
-
-arduino_conectado = conectar_arduino()
-
-
-# ============================================================
-# CALIBRAÇÃO
-# ============================================================
-
-PIXELS_POR_CM = 25.0
-
-
-# ============================================================
-# CONTROLE DO ENVIO
-# ============================================================
-
-produto_detectado_anteriormente = False
-
-largura_anterior = None
-altura_anterior = None
-
-
-# ============================================================
-# RETÂNGULO TRACEJADO
-# ============================================================
-
-def desenhar_tracejado(
-    imagem,
-    x,
-    y,
-    largura,
-    altura
-):
-
-    cor = (0, 255, 0)
-
-    espessura = 2
-
-    tamanho_traco = 10
-
-
-    # --------------------------------------------------------
-    # PARTE SUPERIOR E INFERIOR
-    # --------------------------------------------------------
-
-    for inicio in range(
-        x,
-        x + largura,
-        tamanho_traco * 2
+    def __init__(
+        self,
+        indice_camera=1,
+        pixels_por_cm=25.0,
+        area_minima=3000
     ):
 
-        fim = min(
-            inicio + tamanho_traco,
-            x + largura
+        self.indice_camera = indice_camera
+        self.pixels_por_cm = pixels_por_cm
+        self.area_minima = area_minima
+
+        self.camera = None
+
+    # ---------------------------------------------------------
+    # INICIAR CÂMERA
+    # ---------------------------------------------------------
+
+    def iniciar(self):
+
+        self.camera = cv2.VideoCapture(
+            self.indice_camera
         )
 
-        cv2.line(
-            imagem,
-            (inicio, y),
-            (fim, y),
-            cor,
-            espessura
+        # Se câmera 1 não funcionar, tenta câmera 0
+        if not self.camera.isOpened():
+
+            self.camera = cv2.VideoCapture(0)
+
+        if not self.camera.isOpened():
+
+            return False
+
+        return True
+
+    # ---------------------------------------------------------
+    # DETECTAR PRODUTO
+    # ---------------------------------------------------------
+
+    def detectar(self, frame):
+
+        cinza = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2GRAY
         )
 
-        cv2.line(
-            imagem,
-            (inicio, y + altura),
-            (fim, y + altura),
-            cor,
-            espessura
+        # Reduz ruídos
+        cinza = cv2.GaussianBlur(
+            cinza,
+            (5, 5),
+            0
         )
 
-
-    # --------------------------------------------------------
-    # LATERAIS
-    # --------------------------------------------------------
-
-    for inicio in range(
-        y,
-        y + altura,
-        tamanho_traco * 2
-    ):
-
-        fim = min(
-            inicio + tamanho_traco,
-            y + altura
+        # Detecta bordas
+        bordas = cv2.Canny(
+            cinza,
+            50,
+            150
         )
 
-        cv2.line(
-            imagem,
-            (x, inicio),
-            (x, fim),
-            cor,
-            espessura
+        # Encontra contornos
+        contornos, _ = cv2.findContours(
+            bordas,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
         )
 
-        cv2.line(
-            imagem,
-            (x + largura, inicio),
-            (x + largura, fim),
-            cor,
-            espessura
+        if not contornos:
+
+            return None
+
+        # Maior objeto encontrado
+        maior = max(
+            contornos,
+            key=cv2.contourArea
         )
-
-
-# ============================================================
-# LOOP DA CÂMERA
-# ============================================================
-
-while True:
-
-    validacao, frame = webcam.read()
-
-
-    if not validacao:
-
-        print(
-            "Erro ao capturar imagem."
-        )
-
-        break
-
-
-    frame = cv2.resize(
-        frame,
-        (1280, 720)
-    )
-
-
-    # ========================================================
-    # PROCESSAMENTO
-    # ========================================================
-
-    cinza = cv2.cvtColor(
-        frame,
-        cv2.COLOR_BGR2GRAY
-    )
-
-
-    blur = cv2.GaussianBlur(
-        cinza,
-        (5, 5),
-        0
-    )
-
-
-    bordas = cv2.Canny(
-        blur,
-        50,
-        150
-    )
-
-
-    # ========================================================
-    # CONTORNOS
-    # ========================================================
-
-    contornos, _ = cv2.findContours(
-        bordas,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
-
-
-    maior_contorno = None
-
-    maior_area = 0
-
-
-    for contorno in contornos:
 
         area = cv2.contourArea(
-            contorno
+            maior
         )
 
+        if area < self.area_minima:
 
-        if area > maior_area:
-
-            maior_area = area
-
-            maior_contorno = contorno
-
-
-    # ========================================================
-    # CONTROLE DA DETECÇÃO
-    # ========================================================
-
-    produto_detectado = False
-
-
-    # ========================================================
-    # SE ENCONTROU UM PRODUTO
-    # ========================================================
-
-    if (
-        maior_contorno is not None
-        and maior_area > 2000
-    ):
-
-        produto_detectado = True
-
+            return None
 
         x, y, largura_px, altura_px = cv2.boundingRect(
-            maior_contorno
+            maior
         )
 
+        if largura_px <= 0 or altura_px <= 0:
 
-        # ----------------------------------------------------
-        # MEDIDAS
-        # ----------------------------------------------------
+            return None
 
         largura_cm = (
             largura_px /
-            PIXELS_POR_CM
+            self.pixels_por_cm
         )
 
-        altura_cm = (
+        comprimento_cm = (
             altura_px /
-            PIXELS_POR_CM
+            self.pixels_por_cm
         )
 
+        return {
 
-        # ----------------------------------------------------
-        # DESENHA RETÂNGULO
-        # ----------------------------------------------------
+            "x": x,
+            "y": y,
 
-        desenhar_tracejado(
+            "largura_px": largura_px,
+            "altura_px": altura_px,
+
+            "largura_cm": largura_cm,
+            "comprimento_cm": comprimento_cm
+        }
+
+    # ---------------------------------------------------------
+    # PROCESSAR IMAGEM
+    # ---------------------------------------------------------
+
+    def processar(self, frame):
+
+        produto = self.detectar(
+            frame
+        )
+
+        if produto is None:
+
+            return frame, None
+
+        x = produto["x"]
+        y = produto["y"]
+
+        largura_px = produto["largura_px"]
+        altura_px = produto["altura_px"]
+
+        largura_cm = produto["largura_cm"]
+        comprimento_cm = produto["comprimento_cm"]
+
+        # -----------------------------------------------------
+        # RETÂNGULO VERDE
+        # -----------------------------------------------------
+
+        cv2.rectangle(
             frame,
-            x,
-            y,
-            largura_px,
-            altura_px
+
+            (x, y),
+
+            (
+                x + largura_px,
+                y + altura_px
+            ),
+
+            (0, 255, 0),
+
+            2
         )
 
+        # -----------------------------------------------------
+        # MEDIDAS
+        # -----------------------------------------------------
 
-        # ----------------------------------------------------
-        # MOSTRA LARGURA
-        # ----------------------------------------------------
+        texto_largura = (
+            f"Largura: {largura_cm:.2f} cm"
+        )
+
+        texto_comprimento = (
+            f"Comprimento: {comprimento_cm:.2f} cm"
+        )
 
         cv2.putText(
             frame,
-            f"Largura: {largura_cm:.1f} cm",
-            (x, max(y - 35, 25)),
+            texto_largura,
+            (x, max(y - 30, 30)),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
+            0.65,
             (0, 255, 0),
             2
         )
 
-
-        # ----------------------------------------------------
-        # MOSTRA ALTURA
-        # ----------------------------------------------------
-
         cv2.putText(
             frame,
-            f"Altura: {altura_cm:.1f} cm",
-            (x, max(y - 8, 50)),
+            texto_comprimento,
+            (x, max(y - 5, 55)),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
+            0.6,
             (0, 255, 0),
             2
         )
 
+        return frame, produto
 
-        # ====================================================
-        # VERIFICA SE DEVE ENVIAR
-        # ====================================================
+    # ---------------------------------------------------------
+    # FECHAR
+    # ---------------------------------------------------------
 
-        nova_medida = (
+    def fechar(self):
 
-            largura_anterior is None
+        if self.camera:
 
-            or abs(
-                largura_cm -
-                largura_anterior
-            ) >= 0.5
+            self.camera.release()
 
-            or abs(
-                altura_cm -
-                altura_anterior
-            ) >= 0.5
-        )
+            self.camera = None
 
-
-        produto_novo = (
-            not produto_detectado_anteriormente
-        )
-
-
-        # ====================================================
-        # ENVIA PARA O ARDUINO
-        # ====================================================
-
-        if (
-            arduino_conectado
-            and (
-                produto_novo
-                or nova_medida
-            )
-        ):
-
-            enviar_medidas(
-                largura_cm,
-                altura_cm
-            )
-
-
-            largura_anterior = largura_cm
-
-            altura_anterior = altura_cm
-
-
-    else:
-
-        # ----------------------------------------------------
-        # PRODUTO NÃO ESTÁ MAIS SENDO DETECTADO
-        # ----------------------------------------------------
-
-        largura_anterior = None
-
-        altura_anterior = None
-
-
-    # ========================================================
-    # MOSTRAR CÂMERA
-    # ========================================================
-
-    cv2.imshow(
-        "Flow Pack - Visao Computacional",
-        frame
-    )
-
-
-    # ========================================================
-    # SAIR
-    # ========================================================
-
-    if (
-        cv2.waitKey(1) & 0xFF
-        == ord('q')
-    ):
-
-        break
-
-
-    produto_detectado_anteriormente = (
-        produto_detectado
-    )
-
-
-# ============================================================
-# ENCERRAMENTO
-# ============================================================
-
-webcam.release()
-
-cv2.destroyAllWindows()
-
-desconectar_arduino()
+        cv2.destroyAllWindows()
