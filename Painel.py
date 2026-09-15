@@ -127,7 +127,7 @@ class FlowPack:
             indice_camera=1,
 
             # ESTE VALOR PRECISA SER CALIBRADO
-            pixels_por_cm=25.0
+            pixels_por_cm=11
         )
 
         self.comunicacao = (
