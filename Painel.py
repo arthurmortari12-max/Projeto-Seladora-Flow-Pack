@@ -18,7 +18,7 @@ from Comunicação import ComunicacaoESP32
 
 ARQUIVO_PRODUTOS = "produtos.json"
 
-FOLGA_CANALETAS = 0.5
+FOLGA_CANALETAS = 0.3
 
 PORTA_ESP32 = None
 
@@ -127,7 +127,7 @@ class FlowPack:
             indice_camera=1,
 
             # ESTE VALOR PRECISA SER CALIBRADO
-            pixels_por_cm=11
+            pixels_por_cm=14.5
         )
 
         self.comunicacao = (

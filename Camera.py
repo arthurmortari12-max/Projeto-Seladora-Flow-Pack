@@ -6,7 +6,7 @@ class CameraFlowPack:
     def __init__(
         self,
         indice_camera=1,
-        pixels_por_cm=11,
+        pixels_por_cm=14.5,
         area_minima=3000
     ):
 

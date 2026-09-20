@@ -1,74 +1,42 @@
 [
     {
         "codigo": "001",
-        "nome": "jjj",
-        "largura_cm": 2.44,
-        "comprimento_cm": 4.6,
-        "altura_cm": 4.6,
-        "abertura_canaletas_cm": 2.94
+        "nome": "Celular",
+        "largura_cm": 7.31,
+        "comprimento_cm": 14.97,
+        "altura_cm": 0.7,
+        "abertura_canaletas_cm": 7.31
     },
     {
         "codigo": "002",
-        "nome": "pp",
-        "largura_cm": 3.4,
-        "comprimento_cm": 6.8,
-        "altura_cm": 2.5,
-        "abertura_canaletas_cm": 3.9
+        "nome": "Caixa",
+        "largura_cm": 30.0,
+        "comprimento_cm": 30.0,
+        "altura_cm": 15.0,
+        "abertura_canaletas_cm": 30.0
     },
     {
         "codigo": "003",
-        "nome": "sifdhfh",
-        "largura_cm": 3.0,
-        "comprimento_cm": 3.0,
-        "altura_cm": 8.0,
-        "abertura_canaletas_cm": 3.5
+        "nome": "30",
+        "largura_cm": 30.0,
+        "comprimento_cm": 30.0,
+        "altura_cm": 30.0,
+        "abertura_canaletas_cm": 30.0
     },
     {
         "codigo": "004",
-        "nome": "ggg",
-        "largura_cm": 10.0,
-        "comprimento_cm": 2.0,
-        "altura_cm": 5.0,
-        "abertura_canaletas_cm": 10.5
+        "nome": "dd",
+        "largura_cm": 30.0,
+        "comprimento_cm": 8.0,
+        "altura_cm": 9.0,
+        "abertura_canaletas_cm": 30.3
     },
     {
         "codigo": "005",
-        "nome": "celular",
-        "largura_cm": 4.52,
-        "comprimento_cm": 8.84,
-        "altura_cm": 1.0,
-        "abertura_canaletas_cm": 5.02
-    },
-    {
-        "codigo": "006",
-        "nome": "ihjuh",
-        "largura_cm": 12.0,
-        "comprimento_cm": 6.0,
-        "altura_cm": 8.0,
-        "abertura_canaletas_cm": 12.5
-    },
-    {
-        "codigo": "007",
-        "nome": "kuhuihu",
-        "largura_cm": 30.0,
-        "comprimento_cm": 7.0,
-        "altura_cm": 7.0,
-        "abertura_canaletas_cm": 30.5
-    },
-    {
-        "codigo": "008",
-        "nome": "gffyt",
-        "largura_cm": 14.5,
-        "comprimento_cm": 12.0,
-        "altura_cm": 115.0,
-        "abertura_canaletas_cm": 15.0
-    },
-    {
-        "codigo": "009",
-        "nome": "itgtyf",
-        "largura_cm": 29.5,
-        "comprimento_cm": 9.0,
-        "altura_cm": 9.0,
-        "abertura_canaletas_cm": 30.0
+        "nome": "meio",
+        "largura_cm": 15.0,
+        "comprimento_cm": 87.0,
+        "altura_cm": 1000.0,
+        "abertura_canaletas_cm": 15.3
     }
 ]
