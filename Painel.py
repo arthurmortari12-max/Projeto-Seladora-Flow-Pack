@@ -1,12 +1,8 @@
 import tkinter as tk
-
-from tkinter import (
-    messagebox,
-    simpledialog
-)
-
+from tkinter import messagebox, simpledialog
 import json
 import os
+import cv2
 
 from Camera import CameraFlowPack
 from Comunicação import ComunicacaoESP32
@@ -18,326 +14,486 @@ from Comunicação import ComunicacaoESP32
 
 ARQUIVO_PRODUTOS = "produtos.json"
 
+# Folga adicionada à largura do produto
 FOLGA_CANALETAS = 0.3
 
+# Coloque None para detectar automaticamente
+# ou, por exemplo, "COM14"
 PORTA_ESP32 = None
+
+# Limites físicos das canaletas
+ABERTURA_MINIMA = 2.5
+ABERTURA_MAXIMA = 34.5
 
 
 # ============================================================
-# PRODUTOS
+# ARQUIVO DE PRODUTOS
 # ============================================================
 
 def carregar_produtos():
-
-    if not os.path.exists(
-        ARQUIVO_PRODUTOS
-    ):
-
+    if not os.path.exists(ARQUIVO_PRODUTOS):
         return []
 
     try:
+        with open(ARQUIVO_PRODUTOS, "r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
 
-        with open(
-            ARQUIVO_PRODUTOS,
-            "r",
-            encoding="utf-8"
-        ) as arquivo:
+            if isinstance(dados, list):
+                return dados
 
-            return json.load(
-                arquivo
-            )
+            return []
 
-    except:
-
+    except Exception as erro:
+        print("Erro ao carregar produtos:", erro)
         return []
 
 
 def salvar_produtos(produtos):
+    try:
+        with open(
+            ARQUIVO_PRODUTOS,
+            "w",
+            encoding="utf-8"
+        ) as arquivo:
 
-    with open(
-        ARQUIVO_PRODUTOS,
-        "w",
-        encoding="utf-8"
-    ) as arquivo:
+            json.dump(
+                produtos,
+                arquivo,
+                indent=4,
+                ensure_ascii=False
+            )
 
-        json.dump(
-            produtos,
-            arquivo,
-            indent=4,
-            ensure_ascii=False
+        return True
+
+    except Exception as erro:
+        messagebox.showerror(
+            "Erro",
+            f"Não foi possível salvar o produto:\n{erro}"
         )
+
+        return False
 
 
 def gerar_codigo(produtos):
 
     if not produtos:
-
         return "001"
 
-    numeros = []
+    maior_codigo = 0
 
     for produto in produtos:
 
         try:
+            codigo = int(produto.get("codigo", 0))
 
-            numeros.append(
-                int(
-                    produto["codigo"]
-                )
-            )
+            if codigo > maior_codigo:
+                maior_codigo = codigo
 
         except:
-
             pass
 
-    if not numeros:
-
-        return "001"
-
-    proximo = (
-        max(numeros) + 1
-    )
-
-    return f"{proximo:03d}"
+    return f"{maior_codigo + 1:03d}"
 
 
 # ============================================================
-# SISTEMA
+# APLICAÇÃO
 # ============================================================
 
-class FlowPack:
+class SmartpackApp:
 
-    def __init__(self):
+    def __init__(self, janela):
 
-        self.janela = tk.Tk()
+        self.janela = janela
 
-        self.janela.title(
-            "Sistema Inteligente - Flow Pack"
-        )
+        self.janela.title("SMARTPACK - Sistema Flow Pack")
 
-        self.janela.geometry(
-            "950x650"
-        )
+        self.janela.geometry("1150x700")
 
-        self.produtos = (
-            carregar_produtos()
-        )
-
-        self.camera = CameraFlowPack(
-            indice_camera=1,
-
-            # ESTE VALOR PRECISA SER CALIBRADO
-            pixels_por_cm=14.5
-        )
-
-        self.comunicacao = (
-            ComunicacaoESP32(
-                porta=PORTA_ESP32
-            )
-        )
-
-        self.criar_interface()
-
-        self.atualizar_lista()
-
-    # ========================================================
-    # INTERFACE
-    # ========================================================
-
-    def criar_interface(self):
-
-        titulo = tk.Label(
-
-            self.janela,
-
-            text=(
-                "SISTEMA INTELIGENTE "
-                "DE AJUSTE - FLOW PACK"
-            ),
-
-            font=(
-                "Arial",
-                20,
-                "bold"
-            )
-        )
-
-        titulo.pack(
-            pady=15
+        self.janela.protocol(
+            "WM_DELETE_WINDOW",
+            self.fechar_programa
         )
 
         # ----------------------------------------------------
-        # FRAME ESQUERDO
+        # DADOS
         # ----------------------------------------------------
 
-        esquerda = tk.Frame(
+        self.produtos = carregar_produtos()
+
+        self.produto_selecionado = None
+
+        self.camera = None
+
+        # ----------------------------------------------------
+        # COMUNICAÇÃO ESP32
+        # ----------------------------------------------------
+
+        self.comunicacao = ComunicacaoESP32(
+            porta=PORTA_ESP32,
+            velocidade=115200
+        )
+
+        # ----------------------------------------------------
+        # FRAME PRINCIPAL
+        # ----------------------------------------------------
+
+        self.frame_principal = tk.Frame(
             self.janela
         )
 
-        esquerda.pack(
-            side="left",
-            fill="y",
-            padx=20
+        self.frame_principal.pack(
+            fill="both",
+            expand=True,
+            padx=15,
+            pady=15
         )
 
-        tk.Label(
+        # ====================================================
+        # LADO ESQUERDO
+        # ====================================================
 
-            esquerda,
+        self.frame_produtos = tk.LabelFrame(
+            self.frame_principal,
+            text="Produtos cadastrados",
+            font=("Arial", 12, "bold")
+        )
 
-            text="HISTÓRICO DE PRODUTOS",
+        self.frame_produtos.pack(
+            side="left",
+            fill="y",
+            padx=(0, 10)
+        )
 
-            font=(
-                "Arial",
-                12,
-                "bold"
-            )
-        ).pack(
+        # Lista
+
+        self.lista_produtos = tk.Listbox(
+            self.frame_produtos,
+            width=35,
+            height=25,
+            font=("Arial", 11)
+        )
+
+        self.lista_produtos.pack(
+            padx=10,
             pady=10
         )
 
-        self.lista = tk.Listbox(
-
-            esquerda,
-
-            width=35,
-
-            height=20
-        )
-
-        self.lista.pack()
-
-        self.lista.bind(
+        self.lista_produtos.bind(
             "<<ListboxSelect>>",
             self.selecionar_produto
         )
 
+        # Botão cadastrar
+
         tk.Button(
-
-            esquerda,
-
-            text=(
-                "CADASTRAR NOVO PRODUTO"
-            ),
-
-            width=30,
-
-            command=self.cadastrar_produto
+            self.frame_produtos,
+            text="➕ CADASTRAR PRODUTO",
+            font=("Arial", 11, "bold"),
+            command=self.cadastrar_produto,
+            height=2
         ).pack(
+            fill="x",
+            padx=10,
+            pady=5
+        )
+
+        # ====================================================
+        # INFORMAÇÕES DO PRODUTO
+        # ====================================================
+
+        self.label_info = tk.Label(
+            self.frame_produtos,
+            text="Nenhum produto selecionado",
+            justify="left",
+            anchor="w",
+            font=("Arial", 10)
+        )
+
+        self.label_info.pack(
+            fill="x",
+            padx=10,
+            pady=10
+        )
+
+        # ====================================================
+        # LADO DIREITO
+        # ====================================================
+
+        self.frame_controle = tk.LabelFrame(
+            self.frame_principal,
+            text="Controle da máquina",
+            font=("Arial", 12, "bold")
+        )
+
+        self.frame_controle.pack(
+            side="right",
+            fill="both",
+            expand=True
+        )
+
+        # ----------------------------------------------------
+        # CÂMERA
+        # ----------------------------------------------------
+
+        frame_camera = tk.LabelFrame(
+            self.frame_controle,
+            text="Sistema de visão",
+            font=("Arial", 11, "bold")
+        )
+
+        frame_camera.pack(
+            fill="x",
+            padx=10,
             pady=10
         )
 
         tk.Button(
-
-            esquerda,
-
-            text="ABRIR CÂMERA",
-
-            width=30,
-
+            frame_camera,
+            text="📷 ABRIR CÂMERA",
+            font=("Arial", 11, "bold"),
             command=self.abrir_camera
+        ).pack(
+            side="left",
+            padx=10,
+            pady=10
+        )
+
+        tk.Button(
+            frame_camera,
+            text="✖ FECHAR CÂMERA",
+            font=("Arial", 11, "bold"),
+            command=self.fechar_camera
+        ).pack(
+            side="left",
+            padx=10,
+            pady=10
+        )
+
+        # ----------------------------------------------------
+        # CANALETAS
+        # ----------------------------------------------------
+
+        frame_canaletas = tk.LabelFrame(
+            self.frame_controle,
+            text="Canaletas",
+            font=("Arial", 11, "bold")
+        )
+
+        frame_canaletas.pack(
+            fill="x",
+            padx=10,
+            pady=10
+        )
+
+        tk.Button(
+            frame_canaletas,
+            text="AJUSTAR PRODUTO SELECIONADO",
+            font=("Arial", 11, "bold"),
+            command=self.ajustar_produto
+        ).pack(
+            fill="x",
+            padx=10,
+            pady=10
+        )
+
+        tk.Button(
+            frame_canaletas,
+            text="TESTAR CANALETAS",
+            font=("Arial", 11),
+            command=self.testar_canaletas
+        ).pack(
+            fill="x",
+            padx=10,
+            pady=5
+        )
+
+        # ----------------------------------------------------
+        # ESTEIRA
+        # ----------------------------------------------------
+
+        frame_esteira = tk.LabelFrame(
+            self.frame_controle,
+            text="Esteira - Motor de vidro elétrico",
+            font=("Arial", 11, "bold")
+        )
+
+        frame_esteira.pack(
+            fill="x",
+            padx=10,
+            pady=10
+        )
+
+        frame_botoes = tk.Frame(
+            frame_esteira
+        )
+
+        frame_botoes.pack(
+            pady=10
+        )
+
+        tk.Button(
+            frame_botoes,
+            text="▶ LIGAR",
+            bg="green",
+            fg="white",
+            font=("Arial", 11, "bold"),
+            width=12,
+            command=self.ligar_esteira
+        ).grid(
+            row=0,
+            column=0,
+            padx=5
+        )
+
+        tk.Button(
+            frame_botoes,
+            text="■ PARAR",
+            bg="red",
+            fg="white",
+            font=("Arial", 11, "bold"),
+            width=12,
+            command=self.parar_esteira
+        ).grid(
+            row=0,
+            column=1,
+            padx=5
+        )
+
+        tk.Button(
+            frame_botoes,
+            text="◀ REVERSO",
+            font=("Arial", 11, "bold"),
+            width=12,
+            command=self.reverso_esteira
+        ).grid(
+            row=0,
+            column=2,
+            padx=5
+        )
+
+        # ----------------------------------------------------
+        # VELOCIDADE
+        # ----------------------------------------------------
+
+        tk.Label(
+            frame_esteira,
+            text="Velocidade do motor:",
+            font=("Arial", 10, "bold")
+        ).pack(
+            pady=(10, 0)
+        )
+
+        self.velocidade = tk.IntVar(
+            value=100
+        )
+
+        self.slider_velocidade = tk.Scale(
+            frame_esteira,
+            from_=0,
+            to=255,
+            orient="horizontal",
+            variable=self.velocidade,
+            length=400
+        )
+
+        self.slider_velocidade.pack()
+
+        tk.Button(
+            frame_esteira,
+            text="APLICAR VELOCIDADE",
+            font=("Arial", 10, "bold"),
+            command=self.aplicar_velocidade
+        ).pack(
+            pady=5
+        )
+
+        tk.Button(
+            frame_esteira,
+            text="TESTAR MOTOR",
+            font=("Arial", 10),
+            command=self.testar_motor
         ).pack(
             pady=5
         )
 
         # ----------------------------------------------------
-        # FRAME DIREITO
+        # STATUS
         # ----------------------------------------------------
 
-        direita = tk.Frame(
-            self.janela,
-
-            relief="groove",
-
-            borderwidth=2
+        self.label_status = tk.Label(
+            self.frame_controle,
+            text="Status: Sistema aguardando comando",
+            font=("Arial", 11, "bold")
         )
 
-        direita.pack(
-            side="right",
-
-            fill="both",
-
-            expand=True,
-
-            padx=20,
-
-            pady=10
-        )
-
-        tk.Label(
-
-            direita,
-
-            text="CONTROLE DO PRODUTO",
-
-            font=(
-                "Arial",
-                15,
-                "bold"
-            )
-        ).pack(
+        self.label_status.pack(
             pady=20
         )
 
-        self.informacoes = tk.Label(
+        # ----------------------------------------------------
+        # ATUALIZA LISTA
+        # ----------------------------------------------------
 
-            direita,
-
-            text=(
-                "Selecione um produto."
-            ),
-
-            font=(
-                "Arial",
-                12
-            ),
-
-            justify="left"
-        )
-
-        self.informacoes.pack(
-            pady=20
-        )
-
-        self.status = tk.Label(
-
-            direita,
-
-            text=(
-                "Status: aguardando"
-            ),
-
-            font=(
-                "Arial",
-                11
-            )
-        )
-
-        self.status.pack(
-            pady=20
-        )
+        self.atualizar_lista_produtos()
 
     # ========================================================
-    # ATUALIZAR LISTA
+    # LISTA DE PRODUTOS
     # ========================================================
 
-    def atualizar_lista(self):
+    def atualizar_lista_produtos(self):
 
-        self.lista.delete(
+        self.lista_produtos.delete(
             0,
             tk.END
         )
 
         for produto in self.produtos:
 
-            texto = (
-                f"{produto['codigo']} - "
-                f"{produto['nome']}"
+            codigo = produto.get(
+                "codigo",
+                "---"
             )
 
-            self.lista.insert(
-                tk.END,
-                texto
+            nome = produto.get(
+                "nome",
+                "Sem nome"
             )
+
+            self.lista_produtos.insert(
+                tk.END,
+                f"{codigo} - {nome}"
+            )
+
+    # ========================================================
+    # SELECIONAR PRODUTO
+    # ========================================================
+
+    def selecionar_produto(self, evento=None):
+
+        selecao = self.lista_produtos.curselection()
+
+        if not selecao:
+            return
+
+        indice = selecao[0]
+
+        self.produto_selecionado = self.produtos[indice]
+
+        produto = self.produto_selecionado
+
+        texto = (
+            f"Código: {produto.get('codigo')}\n"
+            f"Nome: {produto.get('nome')}\n\n"
+            f"Largura: {produto.get('largura_cm'):.2f} cm\n"
+            f"Comprimento: {produto.get('comprimento_cm'):.2f} cm\n"
+            f"Altura: {produto.get('altura_cm'):.2f} cm\n\n"
+            f"Abertura das canaletas: "
+            f"{produto.get('abertura_canaletas_cm'):.2f} cm"
+        )
+
+        self.label_info.config(
+            text=texto
+        )
 
     # ========================================================
     # CADASTRAR PRODUTO
@@ -345,446 +501,561 @@ class FlowPack:
 
     def cadastrar_produto(self):
 
+        # ----------------------------------------------------
+        # NOME
+        # ----------------------------------------------------
+
         nome = simpledialog.askstring(
-
             "Novo produto",
-
             "Digite o nome do produto:"
         )
 
         if not nome:
-
             return
 
-        escolha = messagebox.askyesno(
+        # ----------------------------------------------------
+        # ESCOLHA DO MÉTODO DE MEDIÇÃO
+        # ----------------------------------------------------
 
-            "Método de cadastro",
-
-            "Deseja medir o produto "
-            "utilizando a webcam?\n\n"
-            "SIM = câmera\n"
-            "NÃO = inserir manualmente"
+        escolha = messagebox.askyesnocancel(
+            "Como medir o produto?",
+            "Escolha como deseja obter as medidas.\n\n"
+            "SIM = 📷 Medir pela CÂMERA\n\n"
+            "NÃO = ✏️ Inserir medidas MANUALMENTE\n\n"
+            "CANCELAR = Cancelar cadastro"
         )
 
-        if escolha:
+        # Cancelar
 
-            self.cadastrar_camera(
-                nome
+        if escolha is None:
+            return
+
+        # ====================================================
+        # MEDIÇÃO PELA CÂMERA
+        # ====================================================
+
+        if escolha is True:
+
+            resultado = self.medir_produto_camera()
+
+            if resultado is None:
+                return
+
+            largura, comprimento = resultado
+
+            # Altura ainda será informada manualmente
+            altura = simpledialog.askfloat(
+                "Altura do produto",
+                "Digite a altura do produto em centímetros:",
+                minvalue=0.1
             )
+
+            if altura is None:
+                return
+
+        # ====================================================
+        # MEDIÇÃO MANUAL
+        # ====================================================
 
         else:
 
-            self.cadastrar_manual(
-                nome
+            largura = simpledialog.askfloat(
+                "Largura",
+                "Digite a largura do produto em centímetros:",
+                minvalue=0.1
             )
 
-    # ========================================================
-    # CADASTRO MANUAL
-    # ========================================================
+            if largura is None:
+                return
 
-    def cadastrar_manual(
-        self,
-        nome
-    ):
-
-        largura = simpledialog.askfloat(
-
-            "Largura",
-
-            "Largura do produto (cm):"
-        )
-
-        if largura is None:
-
-            return
-
-        comprimento = simpledialog.askfloat(
-
-            "Comprimento",
-
-            "Comprimento do produto (cm):"
-        )
-
-        if comprimento is None:
-
-            return
-
-        altura = simpledialog.askfloat(
-
-            "Altura",
-
-            "Altura do produto (cm):"
-        )
-
-        if altura is None:
-
-            return
-
-        self.salvar_produto(
-
-            nome,
-
-            largura,
-
-            comprimento,
-
-            altura
-        )
-
-    # ========================================================
-    # CADASTRO COM CÂMERA
-    # ========================================================
-
-    def cadastrar_camera(
-        self,
-        nome
-    ):
-
-        if not self.camera.iniciar():
-
-            messagebox.showerror(
-
-                "Erro",
-
-                "Webcam não encontrada."
+            comprimento = simpledialog.askfloat(
+                "Comprimento",
+                "Digite o comprimento do produto em centímetros:",
+                minvalue=0.1
             )
 
-            return
+            if comprimento is None:
+                return
 
-        messagebox.showinfo(
-
-            "Medição",
-
-            "Coloque o produto sob a câmera.\n\n"
-
-            "ENTER = confirmar medida\n"
-
-            "ESC = cancelar"
-        )
-
-        while True:
-
-            sucesso, frame = (
-                self.camera.camera.read()
+            altura = simpledialog.askfloat(
+                "Altura",
+                "Digite a altura do produto em centímetros:",
+                minvalue=0.1
             )
 
-            if not sucesso:
+            if altura is None:
+                return
 
-                break
+        # ====================================================
+        # CALCULAR ABERTURA
+        # ====================================================
 
-            imagem, produto = (
-                self.camera.processar(
-                    frame
-                )
+        abertura = largura + FOLGA_CANALETAS
+
+        if abertura < ABERTURA_MINIMA:
+            abertura = ABERTURA_MINIMA
+
+        if abertura > ABERTURA_MAXIMA:
+
+            messagebox.showwarning(
+                "Produto muito largo",
+                f"A abertura calculada seria "
+                f"{abertura:.2f} cm.\n\n"
+                f"O limite das canaletas é "
+                f"{ABERTURA_MAXIMA:.2f} cm."
             )
 
-            cv2 = __import__(
-                "cv2"
-            )
+            abertura = ABERTURA_MAXIMA
 
-            cv2.imshow(
-
-                "Cadastro do Produto",
-
-                imagem
-            )
-
-            tecla = (
-                cv2.waitKey(1)
-                & 0xFF
-            )
-
-            if tecla == 13:
-
-                if produto is None:
-
-                    messagebox.showwarning(
-
-                        "Produto",
-
-                        "Nenhum produto detectado."
-                    )
-
-                    continue
-
-                largura = (
-                    produto["largura_cm"]
-                )
-
-                comprimento = (
-                    produto[
-                        "comprimento_cm"
-                    ]
-                )
-
-                altura = simpledialog.askfloat(
-
-                    "Altura",
-
-                    "Digite a altura do produto (cm):"
-                )
-
-                if altura is None:
-
-                    break
-
-                self.salvar_produto(
-
-                    nome,
-
-                    largura,
-
-                    comprimento,
-
-                    altura
-                )
-
-                break
-
-            elif tecla == 27:
-
-                break
-
-        self.camera.fechar()
-
-    # ========================================================
-    # SALVAR PRODUTO
-    # ========================================================
-
-    def salvar_produto(
-
-        self,
-
-        nome,
-
-        largura,
-
-        comprimento,
-
-        altura
-    ):
+        # ====================================================
+        # GERAR CÓDIGO
+        # ====================================================
 
         codigo = gerar_codigo(
             self.produtos
         )
 
-        abertura = (
-            largura +
-            FOLGA_CANALETAS
-        )
+        # ====================================================
+        # CRIAR PRODUTO
+        # ====================================================
 
         produto = {
-
             "codigo": codigo,
-
             "nome": nome,
-
-            "largura_cm": round(
-                largura,
-                2
-            ),
-
-            "comprimento_cm": round(
-                comprimento,
-                2
-            ),
-
-            "altura_cm": round(
-                altura,
-                2
-            ),
-
-            "abertura_canaletas_cm": round(
-                abertura,
-                2
-            )
+            "largura_cm": round(largura, 2),
+            "comprimento_cm": round(comprimento, 2),
+            "altura_cm": round(altura, 2),
+            "abertura_canaletas_cm": round(abertura, 2)
         }
+
+        # ====================================================
+        # SALVAR
+        # ====================================================
 
         self.produtos.append(
             produto
         )
 
-        salvar_produtos(
+        if salvar_produtos(
             self.produtos
-        )
+        ):
 
-        self.atualizar_lista()
+            self.atualizar_lista_produtos()
+
+            messagebox.showinfo(
+                "Produto cadastrado",
+                f"Produto cadastrado com sucesso!\n\n"
+                f"Código: {codigo}\n"
+                f"Nome: {nome}\n\n"
+                f"Largura: {largura:.2f} cm\n"
+                f"Comprimento: {comprimento:.2f} cm\n"
+                f"Altura: {altura:.2f} cm\n\n"
+                f"Abertura das canaletas: "
+                f"{abertura:.2f} cm"
+            )
+
+    # ========================================================
+    # MEDIR PRODUTO PELA CÂMERA
+    # ========================================================
+
+    def medir_produto_camera(self):
 
         messagebox.showinfo(
-
-            "Produto cadastrado",
-
-            f"Produto: {nome}\n"
-            f"Código: {codigo}\n\n"
-
-            f"Largura: {largura:.2f} cm\n"
-            f"Comprimento: {comprimento:.2f} cm\n"
-            f"Altura: {altura:.2f} cm\n\n"
-
-            f"Abertura das canaletas: "
-            f"{abertura:.2f} cm"
+            "Medição pela câmera",
+            "A câmera será aberta.\n\n"
+            "Coloque o produto sobre a esteira.\n\n"
+            "Aguarde o sistema detectar o produto.\n\n"
+            "Pressione Q para cancelar."
         )
 
-    # ========================================================
-    # SELECIONAR PRODUTO
-    # ========================================================
-
-    def selecionar_produto(
-        self,
-        evento
-    ):
-
-        selecao = (
-            self.lista.curselection()
+        camera = CameraFlowPack(
+            indice_camera=1,
+            pixels_por_cm=28,
+            area_minima=3000
         )
 
-        if not selecao:
+        if not camera.abrir():
 
-            return
+            messagebox.showerror(
+                "Erro de câmera",
+                "Não foi possível abrir a câmera."
+            )
 
-        indice = selecao[0]
+            return None
 
-        produto = (
-            self.produtos[indice]
-        )
+        largura_detectada = None
+        comprimento_detectado = None
 
-        texto = (
+        while True:
 
-            f"Código: "
-            f"{produto['codigo']}\n\n"
+            frame, largura, comprimento = camera.ler_produto()
 
-            f"Produto: "
-            f"{produto['nome']}\n\n"
+            if frame is None:
+                break
 
-            f"Largura: "
-            f"{produto['largura_cm']} cm\n"
+            cv2.imshow(
+                "SMARTPACK - Medicao do Produto",
+                frame
+            )
 
-            f"Comprimento: "
-            f"{produto['comprimento_cm']} cm\n"
+            # Se detectou produto
+            if largura is not None and comprimento is not None:
 
-            f"Altura: "
-            f"{produto['altura_cm']} cm\n\n"
+                largura_detectada = largura
+                comprimento_detectado = comprimento
 
-            f"Abertura das canaletas: "
-            f"{produto['abertura_canaletas_cm']} cm"
-        )
+                # Mostra a medição por alguns segundos
+                cv2.putText(
+                    frame,
+                    "PRODUTO DETECTADO",
+                    (30, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 255, 0),
+                    2
+                )
 
-        self.informacoes.config(
-            text=texto
-        )
+                cv2.imshow(
+                    "SMARTPACK - Medicao do Produto",
+                    frame
+                )
+
+                tecla = cv2.waitKey(1000) & 0xFF
+
+                break
+
+            tecla = cv2.waitKey(30) & 0xFF
+
+            # Q cancela
+            if tecla == ord("q"):
+
+                largura_detectada = None
+                comprimento_detectado = None
+
+                break
+
+        camera.fechar()
+
+        if largura_detectada is None:
+
+            messagebox.showwarning(
+                "Produto não detectado",
+                "A câmera não conseguiu detectar "
+                "um produto."
+            )
+
+            return None
 
         # ----------------------------------------------------
-        # ENVIA PARA O ESP32
+        # CONFIRMAÇÃO
         # ----------------------------------------------------
 
-        abertura = (
-            produto[
-                "abertura_canaletas_cm"
-            ]
+        confirmar = messagebox.askyesno(
+            "Confirmar medição",
+            f"Produto detectado!\n\n"
+            f"Largura: {largura_detectada:.2f} cm\n"
+            f"Comprimento: {comprimento_detectado:.2f} cm\n\n"
+            f"Deseja utilizar essas medidas?"
         )
 
-        enviado = (
-            self.comunicacao
-            .enviar_abertura(
-                abertura
-            )
+        if not confirmar:
+
+            return None
+
+        return (
+            largura_detectada,
+            comprimento_detectado
         )
-
-        if enviado:
-
-            self.status.config(
-
-                text=(
-
-                    "ESP32 conectado\n"
-
-                    f"Canaletas configuradas: "
-                    f"{abertura:.2f} cm"
-                )
-            )
-
-        else:
-
-            self.status.config(
-
-                text=(
-
-                    "Produto selecionado.\n"
-
-                    "ESP32 não conectado."
-                )
-            )
 
     # ========================================================
-    # ABRIR CAMERA
+    # ABRIR CÂMERA
     # ========================================================
 
     def abrir_camera(self):
 
-        if not self.camera.iniciar():
+        if self.camera is not None:
+            return
+
+        self.camera = CameraFlowPack(
+            indice_camera=1,
+            pixels_por_cm=28,
+            area_minima=3000
+        )
+
+        if not self.camera.abrir():
+
+            self.camera = None
 
             messagebox.showerror(
-
                 "Erro",
-
-                "Não foi possível abrir a webcam."
+                "Não foi possível abrir a câmera."
             )
 
             return
 
-        while True:
+        self.label_status.config(
+            text="Status: Câmera ligada"
+        )
 
-            sucesso, frame = (
-                self.camera.camera.read()
-            )
+        self.atualizar_camera()
 
-            if not sucesso:
+    # ========================================================
+    # ATUALIZAR CÂMERA
+    # ========================================================
 
-                break
+    def atualizar_camera(self):
 
-            imagem, produto = (
-                self.camera.processar(
-                    frame
-                )
-            )
+        if self.camera is None:
+            return
 
-            cv2 = __import__(
-                "cv2"
-            )
+        frame, largura, comprimento = (
+            self.camera.ler_produto()
+        )
+
+        if frame is not None:
 
             cv2.imshow(
-
-                "Visao Computacional - Flow Pack",
-
-                imagem
+                "SMARTPACK - Camera",
+                frame
             )
 
-            tecla = (
-                cv2.waitKey(1)
-                & 0xFF
-            )
+            tecla = cv2.waitKey(1) & 0xFF
 
             if tecla == ord("q"):
 
-                break
+                self.fechar_camera()
 
-        self.camera.fechar()
+                return
+
+        self.janela.after(
+            30,
+            self.atualizar_camera
+        )
 
     # ========================================================
-    # EXECUTAR
+    # FECHAR CÂMERA
     # ========================================================
 
-    def executar(self):
+    def fechar_camera(self):
 
-        self.janela.mainloop()
+        if self.camera is not None:
+
+            self.camera.fechar()
+
+            self.camera = None
+
+        cv2.destroyAllWindows()
+
+        self.label_status.config(
+            text="Status: Câmera desligada"
+        )
+
+    # ========================================================
+    # AJUSTAR CANALETAS
+    # ========================================================
+
+    def ajustar_produto(self):
+
+        if self.produto_selecionado is None:
+
+            messagebox.showwarning(
+                "Nenhum produto",
+                "Selecione um produto primeiro."
+            )
+
+            return
+
+        abertura = self.produto_selecionado[
+            "abertura_canaletas_cm"
+        ]
+
+        sucesso = self.comunicacao.enviar_abertura(
+            abertura
+        )
+
+        if sucesso:
+
+            self.label_status.config(
+                text=(
+                    f"Status: Canaletas ajustadas "
+                    f"para {abertura:.2f} cm"
+                )
+            )
+
+            messagebox.showinfo(
+                "Canaletas",
+                f"Canaletas ajustadas para:\n\n"
+                f"{abertura:.2f} cm"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível enviar o comando "
+                "para o ESP32."
+            )
+
+    # ========================================================
+    # TESTAR CANALETAS
+    # ========================================================
+
+    def testar_canaletas(self):
+
+        sucesso = self.comunicacao.teste_canaletas()
+
+        if sucesso:
+
+            self.label_status.config(
+                text="Status: Teste das canaletas iniciado"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível testar as canaletas."
+            )
+
+    # ========================================================
+    # ESTEIRA - LIGAR
+    # ========================================================
+
+    def ligar_esteira(self):
+
+        sucesso = self.comunicacao.ligar_esteira()
+
+        if sucesso:
+
+            self.label_status.config(
+                text="Status: Esteira LIGADA"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível ligar a esteira."
+            )
+
+    # ========================================================
+    # ESTEIRA - PARAR
+    # ========================================================
+
+    def parar_esteira(self):
+
+        sucesso = self.comunicacao.parar_esteira()
+
+        if sucesso:
+
+            self.label_status.config(
+                text="Status: Esteira PARADA"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível parar a esteira."
+            )
+
+    # ========================================================
+    # ESTEIRA - REVERSO
+    # ========================================================
+
+    def reverso_esteira(self):
+
+        sucesso = self.comunicacao.reverso_esteira()
+
+        if sucesso:
+
+            self.label_status.config(
+                text="Status: Esteira em REVERSO"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível inverter a esteira."
+            )
+
+    # ========================================================
+    # VELOCIDADE
+    # ========================================================
+
+    def aplicar_velocidade(self):
+
+        velocidade = self.velocidade.get()
+
+        sucesso = self.comunicacao.definir_velocidade(
+            velocidade
+        )
+
+        if sucesso:
+
+            self.label_status.config(
+                text=f"Status: Velocidade = {velocidade}/255"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível alterar a velocidade."
+            )
+
+    # ========================================================
+    # TESTAR MOTOR
+    # ========================================================
+
+    def testar_motor(self):
+
+        sucesso = self.comunicacao.teste_esteira()
+
+        if sucesso:
+
+            self.label_status.config(
+                text="Status: Teste do motor iniciado"
+            )
+
+        else:
+
+            messagebox.showerror(
+                "Erro",
+                "Não foi possível testar o motor."
+            )
+
+    # ========================================================
+    # FECHAR PROGRAMA
+    # ========================================================
+
+    def fechar_programa(self):
+
+        try:
+
+            self.comunicacao.parar_esteira()
+
+        except:
+            pass
+
+        self.fechar_camera()
+
+        self.comunicacao.fechar()
+
+        self.janela.destroy()
 
 
 # ============================================================
-# INÍCIO
+# INICIAR SISTEMA
 # ============================================================
 
 if __name__ == "__main__":
 
-    programa = FlowPack()
+    janela = tk.Tk()
 
-    programa.executar()
+    app = SmartpackApp(
+        janela
+    )
+
+    janela.mainloop()

@@ -1,13 +1,5 @@
 [
     {
-        "codigo": "001",
-        "nome": "Celular",
-        "largura_cm": 7.31,
-        "comprimento_cm": 14.97,
-        "altura_cm": 0.7,
-        "abertura_canaletas_cm": 7.31
-    },
-    {
         "codigo": "002",
         "nome": "Caixa",
         "largura_cm": 30.0,
@@ -17,26 +9,18 @@
     },
     {
         "codigo": "003",
-        "nome": "30",
-        "largura_cm": 30.0,
-        "comprimento_cm": 30.0,
-        "altura_cm": 30.0,
-        "abertura_canaletas_cm": 30.0
+        "nome": "15",
+        "largura_cm": 15.0,
+        "comprimento_cm": 15.0,
+        "altura_cm": 15.0,
+        "abertura_canaletas_cm": 15.3
     },
     {
         "codigo": "004",
-        "nome": "dd",
-        "largura_cm": 30.0,
-        "comprimento_cm": 8.0,
-        "altura_cm": 9.0,
-        "abertura_canaletas_cm": 30.3
-    },
-    {
-        "codigo": "005",
-        "nome": "meio",
-        "largura_cm": 15.0,
-        "comprimento_cm": 87.0,
-        "altura_cm": 1000.0,
-        "abertura_canaletas_cm": 15.3
+        "nome": "caixa2",
+        "largura_cm": 8.25,
+        "comprimento_cm": 11.46,
+        "altura_cm": 5.0,
+        "abertura_canaletas_cm": 8.55
     }
 ]
