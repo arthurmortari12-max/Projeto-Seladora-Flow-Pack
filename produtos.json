@@ -9,18 +9,10 @@
     },
     {
         "codigo": "003",
-        "nome": "15",
-        "largura_cm": 15.0,
-        "comprimento_cm": 15.0,
-        "altura_cm": 15.0,
-        "abertura_canaletas_cm": 15.3
-    },
-    {
-        "codigo": "004",
-        "nome": "caixa2",
-        "largura_cm": 8.25,
-        "comprimento_cm": 11.46,
-        "altura_cm": 5.0,
-        "abertura_canaletas_cm": 8.55
+        "nome": "Celular",
+        "largura_cm": 6.82,
+        "comprimento_cm": 13.57,
+        "altura_cm": 2.5,
+        "abertura_canaletas_cm": 7.12
     }
 ]
